@@ -261,8 +261,13 @@ function buildHierarchy(employees) {
     else divMap[div][team].members.push(emp);
   });
 
+  function getLeaveVal(e) {
+    if ('휴직 유무' in e) return String(e['휴직 유무']||'').trim();
+    const k = Object.keys(e).find(k => k.includes('휴직'));
+    return k ? String(e[k]||'').trim() : '';
+  }
   function empNode(e, extra = {}) {
-    const isLeave = String(e['휴직 유무']||'').trim() === 'O';
+    const isLeave = getLeaveVal(e) === 'O';
     return {
       _type: 'person',
       _name: String(e['성명']||''),
@@ -777,7 +782,11 @@ function renderTable(employees) {
     return (ia === -1 ? 999 : ia) - (ib === -1 ? 999 : ib);
   });
 
-  function isLeave(e) { return String(e['휴직 유무']||'').trim() === 'O'; }
+  function isLeave(e) {
+    if ('휴직 유무' in e) return String(e['휴직 유무']||'').trim() === 'O';
+    const k = Object.keys(e).find(k => k.includes('휴직'));
+    return k ? String(e[k]||'').trim() === 'O' : false;
+  }
   function empLabel(e) {
     const en = String(e['영어 닉네임']||e['영어닉네임']||'').trim();
     const ko = String(e['성명']||'').trim();
