@@ -1,0 +1,983 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>조직도</title>
+<script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
+<script src="https://d3js.org/d3.v7.min.js"></script>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Malgun Gothic', sans-serif; background: #f0f2f8; min-height: 100vh; }
+
+.header {
+  background: #1e1e2e; color: white;
+  padding: 14px 24px;
+  display: flex; align-items: center; justify-content: space-between;
+}
+.header h1 { font-size: 17px; font-weight: 700; }
+.header-meta { font-size: 11px; color: #888; display: flex; gap: 14px; }
+
+.controls {
+  background: white; padding: 10px 20px;
+  display: flex; gap: 10px; align-items: center; flex-wrap: wrap;
+  border-bottom: 1px solid #e8e8f0;
+}
+.url-input {
+  flex: 1; min-width: 260px;
+  padding: 7px 12px; border: 1px solid #d8d8e8; border-radius: 7px;
+  font-size: 12px; outline: none;
+}
+.url-input:focus { border-color: #6366f1; box-shadow: 0 0 0 2px #6366f120; }
+.btn { padding: 7px 14px; border: none; border-radius: 7px; cursor: pointer; font-size: 12px; font-weight: 600; transition: opacity .15s; white-space: nowrap; }
+.btn:hover { opacity: .8; }
+.btn-primary { background: #6366f1; color: white; }
+.btn-file { background: #f0f0f8; color: #444; }
+.refresh-label { font-size: 12px; color: #888; display: flex; align-items: center; gap: 5px; cursor: pointer; }
+
+.drop-zone {
+  border: 2px dashed #c4c4e0; border-radius: 14px;
+  padding: 48px 32px; text-align: center;
+  margin: 32px auto; max-width: 560px;
+  background: white; cursor: pointer; transition: all .2s;
+}
+.drop-zone.drag-over { border-color: #6366f1; background: #f5f5ff; }
+.drop-zone .icon { font-size: 40px; margin-bottom: 12px; }
+.drop-zone h2 { font-size: 15px; color: #3d3d6e; font-weight: 700; margin-bottom: 6px; }
+.drop-zone p { font-size: 12px; color: #999; line-height: 1.6; }
+.drop-zone .hint { margin-top: 14px; font-size: 11px; color: #bbb; }
+
+#chart-wrap { overflow-x: scroll; overflow-y: auto; }
+#chart-wrap::-webkit-scrollbar { height: 10px; display: block; }
+#chart-wrap::-webkit-scrollbar-track { background: #e8e8f0; border-radius: 5px; }
+#chart-wrap::-webkit-scrollbar-thumb { background: #a0a0c0; border-radius: 5px; }
+#chart-wrap::-webkit-scrollbar-thumb:hover { background: #6366f1; }
+svg { display: block; }
+
+/* 링크 선 */
+.link { fill: none; stroke: #cdd0e0; stroke-width: 1.5; }
+.link-div { stroke: #b0b4cc; stroke-width: 2; stroke-dasharray: none; }
+
+/* 범례 */
+.legend { display: flex; flex-wrap: wrap; gap: 8px; padding: 10px 20px; background: white; border-top: 1px solid #e8e8f0; }
+.legend-item { display: flex; align-items: center; gap: 5px; font-size: 11px; color: #555; }
+.legend-dot { width: 9px; height: 9px; border-radius: 50%; flex-shrink: 0; }
+.legend-sep { width: 1px; height: 14px; background: #e0e0e0; margin: 0 4px; }
+
+.err-msg { margin: 32px auto; max-width: 480px; padding: 16px 20px; background: #fff0f0; border: 1px solid #fcc; border-radius: 10px; font-size: 13px; color: #c00; text-align: center; }
+
+.tooltip { position: fixed; background: #1e1e2e; color: white; padding: 10px 14px; border-radius: 8px; font-size: 12px; pointer-events: none; z-index: 999; opacity: 0; transition: opacity .15s; line-height: 1.7; max-width: 240px; box-shadow: 0 4px 16px rgba(0,0,0,.25); }
+.tooltip.show { opacity: 1; }
+
+/* ── 뷰 탭 ── */
+.view-tabs { background: white; border-bottom: 1px solid #e8e8f0; padding: 0 20px; display: none; gap: 0; }
+.view-tabs.visible { display: flex; }
+.tab-btn { padding: 10px 20px; font-size: 13px; font-weight: 600; border: none; background: none; cursor: pointer; color: #888; border-bottom: 2px solid transparent; transition: all .15s; }
+.tab-btn:hover { color: #6366f1; }
+.tab-btn.active { color: #6366f1; border-bottom-color: #6366f1; }
+
+/* ── 팀 요약 테이블 ── */
+#table-area { padding: 24px; display: none; }
+.team-summary-table { width: 100%; border-collapse: collapse; background: white; border-radius: 12px; overflow: hidden; box-shadow: 0 2px 12px rgba(0,0,0,.06); font-size: 13px; }
+.team-summary-table thead tr { background: #1e1e2e; color: white; }
+.team-summary-table th { padding: 11px 16px; text-align: left; font-weight: 600; font-size: 12px; }
+.team-summary-table th:last-child { text-align: center; }
+.team-summary-table td { padding: 10px 16px; border-bottom: 1px solid #f0f0f8; vertical-align: middle; }
+.team-summary-table tr:last-child td { border-bottom: none; }
+.team-summary-table tr:hover td { background: #fafafe; }
+.div-badge { display: inline-block; padding: 2px 8px; border-radius: 20px; font-size: 11px; font-weight: 700; color: white; }
+.team-badge { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 11px; font-weight: 600; }
+.lead-name { font-weight: 600; color: #1a1a2e; }
+.gyeomjik-tag { display: inline-block; margin-left: 5px; padding: 1px 5px; background: #fff0e6; color: #f97316; border-radius: 3px; font-size: 10px; font-weight: 700; border: 1px solid #fed7aa; }
+.members-list { color: #555; line-height: 1.7; }
+.member-chip { display: inline-block; background: #f4f4f8; border-radius: 4px; padding: 1px 6px; margin: 1px 2px; font-size: 11px; color: #444; }
+.total-count { font-weight: 700; font-size: 14px; text-align: center; }
+.div-group-header td { background: #f7f7fc; font-weight: 700; font-size: 12px; padding: 7px 16px; color: #555; border-bottom: 1px solid #e8e8f0; }
+.div-group-header .div-count { float: right; font-size: 12px; color: #888; font-weight: 600; }
+.grand-total-row td { background: #1e1e2e !important; color: white; font-weight: 700; font-size: 13px; padding: 12px 16px; }
+.grand-total-row .total-count { color: #a5f3fc; font-size: 16px; }
+
+.btn-pdf { background: #ef4444; color: white; }
+
+@media print {
+  body { background: white !important; }
+  .controls, .view-tabs, .legend, #upload-area, .btn-pdf { display: none !important; }
+  .header { background: #1e1e2e !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+
+  /* 기본적으로 둘 다 숨김 */
+  #chart-area, #table-area { display: none !important; }
+
+  /* 현재 뷰만 출력 */
+  body.print-org  #chart-area  { display: block !important; }
+  body.print-table #table-area { display: block !important; }
+
+  /* 조직도 SVG - 실제 크기로 출력 (여러 페이지 허용) */
+  #chart-wrap { overflow: visible !important; }
+  #chart-wrap svg { width: auto !important; height: auto !important; }
+
+  /* 팀 요약 테이블 */
+  .team-summary-table { box-shadow: none !important; }
+  .team-summary-table thead tr { background: #1e1e2e !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  .grand-total-row td { background: #1e1e2e !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  .div-group-header td { background: #f7f7fc !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  rect, path, text { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+
+  @page { margin: 15mm; size: A3 landscape; }
+}
+</style>
+</head>
+<body>
+
+<div class="header">
+  <h1>🏢 조직도</h1>
+  <div class="header-meta">
+    <span id="emp-count"></span>
+    <span id="last-updated"></span>
+  </div>
+</div>
+
+<div class="controls">
+  <input type="text" id="sheets-url" class="url-input"
+    placeholder="Google Sheets URL 붙여넣기 (파일 → 공유 → 웹에 게시 → CSV)">
+  <button class="btn btn-primary" onclick="loadFromURL()">불러오기</button>
+  <button class="btn btn-file" onclick="document.getElementById('file-input').click()">📂 파일 선택 / 교체</button>
+  <input type="file" id="file-input" accept=".xlsx,.csv" style="display:none" onchange="handleFileInput(event)">
+  <button class="btn btn-pdf" id="pdf-btn" onclick="downloadPDF()" style="display:none">📄 PDF 저장</button>
+  <label class="refresh-label">
+    <input type="checkbox" id="auto-refresh" checked> 5분마다 자동 새로고침
+  </label>
+</div>
+
+<div class="view-tabs" id="view-tabs">
+  <button class="tab-btn active" id="tab-org"   onclick="switchView('org')">🌳 조직도</button>
+  <button class="tab-btn"        id="tab-table" onclick="switchView('table')">📋 팀 요약</button>
+</div>
+
+<div id="upload-area">
+  <div class="drop-zone" id="drop-zone" onclick="document.getElementById('file-input').click()">
+    <div class="icon">📊</div>
+    <h2>HR 마스터 파일을 여기에 드래그하거나 클릭하여 선택</h2>
+    <p>Excel (.xlsx) 또는 CSV 파일 지원<br>파일이 업데이트되면 다시 드래그하면 조직도가 자동으로 변경됩니다</p>
+    <div class="hint">또는 위에서 Google Sheets CSV URL을 입력하세요</div>
+  </div>
+</div>
+
+<div id="chart-area" style="display:none;">
+  <div id="chart-wrap"></div>
+  <div class="legend" id="legend"></div>
+</div>
+
+<div id="table-area">
+  <div id="table-container"></div>
+</div>
+
+<div class="tooltip" id="tooltip"></div>
+
+<script>
+// ── 실 표시 순서 ──
+const DIV_ORDER = ['CEO조직', '사업실', '컨텐츠개발실', '경영관리실'];
+
+// ── 색상 ──
+const DIV_COLORS = {
+  'CEO조직':    '#6366f1',
+  '사업실':     '#10b981',
+  '컨텐츠개발실': '#0ea5e9',
+  '경영관리실':  '#f59e0b',
+};
+const TEAM_COLORS = {
+  '신용평가팀':  '#0284c7',
+  '제품팀':     '#7c3aed',
+  '정보시스템팀':'#2563eb',
+  '정보보안팀':  '#dc2626',
+  '컨설팅사업팀':'#059669',
+  '세일즈팀':   '#d97706',
+  '서비스사업팀':'#0d9488',
+  '리스크관리팀':'#9333ea',
+  '경영지원팀':  '#ea580c',
+};
+
+function divColor(d)  { return DIV_COLORS[d]  || '#64748b'; }
+function teamColor(t) { return TEAM_COLORS[t] || '#64748b'; }
+
+// 실에서 팀 컬러가 없을 경우 division 색으로 fallback
+function nodeColor(data) {
+  if (data._type === 'division') return divColor(data._name);
+  return teamColor(data._team) || divColor(data._div);
+}
+
+// ── 레벨 순위 ──
+const LEVEL_RANK = { E1:0, M1:1, M0:2, PS2:3, P3:4, P2:5, P1:6, T1:7, T2:8, '계약':9, '인턴':10 };
+function levelRank(l) { return LEVEL_RANK[String(l||'')] ?? 99; }
+
+// ── 데이터 파싱 ──
+function parseActiveEmployees(sheetData) {
+  const STOP = ['사외이사', '퇴사자'];
+  let headers = null;
+  let stopped = false;
+  const employees = [];
+
+  for (let i = 0; i < sheetData.length; i++) {
+    const row = sheetData[i];
+    if (!row || row.every(c => c == null || c === '')) continue;
+    const first = String(row[0] || row[1] || '').trim();
+
+    if (STOP.some(k => first === k)) { stopped = true; continue; }
+    if (stopped) continue;
+
+    if (row.some(c => c === '성명')) {
+      headers = row.map(h => h == null ? null : String(h).trim());
+      continue;
+    }
+    if (!headers) continue;
+    if (first === 'No.' || first === '재직자' || first === '총인원') continue;
+
+    const emp = {};
+    headers.forEach((h, j) => { if (h) emp[h] = row[j]; });
+
+    if (!emp['성명'] || !emp['실']) continue;
+    employees.push(emp);
+  }
+  return employees;
+}
+
+// ── 계층 구조 생성 ──
+function buildHierarchy(employees) {
+  const ceo = employees.find(e =>
+    String(e['레벨']||'').trim() === 'E1' || String(e['직무']||'').toUpperCase() === 'CEO'
+  );
+  if (!ceo) return null;
+
+  const others = employees.filter(e => e !== ceo);
+
+  // 실 → 팀 → { leads, members }
+  const divMap = {};
+  others.forEach(emp => {
+
+    const div  = String(emp['실']||'').trim();
+    const team = String(emp['팀']||'').trim();
+    if (!divMap[div]) divMap[div] = {};
+    if (!divMap[div][team]) divMap[div][team] = { leads: [], members: [] };
+    if (String(emp['직책']||'').trim() === 'Lead') divMap[div][team].leads.push(emp);
+    else divMap[div][team].members.push(emp);
+  });
+
+  function empNode(e, extra = {}) {
+    const isLeave = String(e['휴직 유무']||'').trim() === 'O';
+    return {
+      _type: 'person',
+      _name: String(e['성명']||''),
+      _en:   String(e['영어 닉네임']||e['영어닉네임']||''),
+      _job:  String(e['직무']||''),
+      _level:String(e['레벨']||''),
+      _div:  String(e['실']||'').trim(),
+      _team: String(e['팀']||'').trim(),
+      _employ: String(e['고용형태']||''),
+      _leave: isLeave,
+      ...extra
+    };
+  }
+
+  const ceoNode = empNode(ceo, {
+    _type: 'ceo',
+    _gyeomjik: String(ceo['겸직팀']||'').trim() || null,
+    children: []
+  });
+
+  // DIV_ORDER 기준으로 실 정렬
+  const sortedDivs = Object.keys(divMap).sort((a, b) => {
+    const ia = DIV_ORDER.indexOf(a), ib = DIV_ORDER.indexOf(b);
+    if (ia === -1 && ib === -1) return 0;
+    if (ia === -1) return 1;
+    if (ib === -1) return -1;
+    return ia - ib;
+  });
+
+  sortedDivs.forEach(div => {
+    const teams = divMap[div];
+    const divNode = {
+      _type: 'division', _name: div, _div: div, _team: '', _level: '',
+      children: []
+    };
+
+    Object.entries(teams).forEach(([team, { leads, members }]) => {
+      members.sort((a, b) => levelRank(a['레벨']) - levelRank(b['레벨']));
+      const memberNodes = members.map(m => empNode(m));
+
+      if (leads.length >= 1) {
+        leads.forEach(lead => {
+          divNode.children.push(empNode(lead, {
+            _type: 'lead',
+            _members: memberNodes,
+            children: []
+          }));
+        });
+      } else if (members.length === 0) {
+        // nothing
+      } else if (team === (ceoNode._gyeomjik || '')) {
+        // 겸직 팀: 겸직자 정보로 Lead 카드 생성
+        divNode.children.push({
+          _type: 'lead',
+          _isGyeomjik: true,
+          _name: ceoNode._name,
+          _en:   ceoNode._en,
+          _job:  ceoNode._job,
+          _div:  div,
+          _team: team,
+          _employ: ceoNode._employ,
+          _members: memberNodes,
+          children: []
+        });
+      } else {
+        // 팀원만 있는 경우: 가상 팀 노드에 _members로 보관
+        divNode.children.push({
+          _type: 'team', _name: team, _div: div, _team: team, _level: '', _en: '', _job: '',
+          _members: memberNodes,
+          children: []
+        });
+      }
+    });
+
+    if (divNode.children.length > 0) ceoNode.children.push(divNode);
+  });
+
+  // ── 인원수 계산 ──
+  function computeCounts(node) {
+    const membersCount = (node._members || []).length;
+    const childSum = (node.children || []).reduce((s, c) => s + computeCounts(c), 0);
+    if (node._type === 'ceo')           node._count = 1 + childSum;
+    else if (node._type === 'division') node._count = childSum;
+    else if (node._type === 'lead')     node._count = node._isGyeomjik ? membersCount : 1 + membersCount;
+    else if (node._type === 'team')     node._count = membersCount;
+    else                                node._count = 1;
+    return node._count;
+  }
+  computeCounts(ceoNode);
+
+  // 겸직 대상 노드에 태깅 (renderChart에서 좌표 없이도 처리 가능하도록)
+  if (ceoNode._gyeomjik) {
+    function tagGyeomjik(node) {
+      if (node !== ceoNode &&
+          (node._team === ceoNode._gyeomjik || node._name === ceoNode._gyeomjik)) {
+        node._gyeomjikBy = ceoNode._name;
+      }
+      (node.children || []).forEach(tagGyeomjik);
+    }
+    tagGyeomjik(ceoNode);
+  }
+
+  return ceoNode;
+}
+
+// ── D3 렌더링 ──
+const NW = 210, NH_DIV = 56, NH_P = 100, HGAP = 24, VGAP = 60;
+const NH_M = 68, MGAP = 8;
+function membersStackH(node) {
+  const n = (node._members || []).length;
+  return n > 0 ? MGAP + n * (NH_M + MGAP) : 0;
+}
+
+function getNodeH(d) {
+  return (d.data._type === 'division') ? NH_DIV : NH_P;
+}
+
+function renderChart(rootData) {
+  const container = document.getElementById('chart-wrap');
+  container.innerHTML = '';
+
+  // D3 hierarchy + custom nodeSize
+  const hierarchy = d3.hierarchy(rootData);
+
+  // Use uniform vertical spacing; horizontal spread by tree
+  const treeLayout = d3.tree()
+    .nodeSize([NW + HGAP, NH_P + VGAP])
+    .separation((a, b) => a.parent === b.parent ? 1 : 1.2);
+
+  treeLayout(hierarchy);
+
+  // 각 노드의 y를 depth별 고정 y로 재조정 (division과 person 높이 차이 보정)
+  const depthY = {};
+  hierarchy.each(d => {
+    if (!(d.depth in depthY)) depthY[d.depth] = d.y;
+    else depthY[d.depth] = Math.min(depthY[d.depth], d.y);
+  });
+  // 실제 y 값: 이전 레이어 높이 누적
+  const layerH = { 0: 0 };
+  let cumY = 0;
+  const maxDepth = Math.max(...hierarchy.descendants().map(d => d.depth));
+  for (let dep = 0; dep <= maxDepth; dep++) {
+    const hasDiv = hierarchy.descendants().some(d => d.depth === dep && d.data._type === 'division');
+    const nodeH = hasDiv ? NH_DIV : NH_P;
+    layerH[dep] = cumY;
+    cumY += nodeH + VGAP;
+  }
+  hierarchy.each(d => { d.y = layerH[d.depth]; });
+
+  // 범위 계산 (멤버 스택 높이 포함)
+  let x0=Infinity, x1=-Infinity;
+  hierarchy.each(d => { x0 = Math.min(x0, d.x-NW/2); x1 = Math.max(x1, d.x+NW/2); });
+  let maxBottomY = cumY - VGAP;
+  hierarchy.each(d => {
+    const mh = membersStackH(d.data);
+    if (mh > 0) maxBottomY = Math.max(maxBottomY, d.y + NH_P + mh);
+  });
+  const pad = 36;
+  const svgW = x1 - x0 + pad*2;
+  const svgH = maxBottomY + pad*2;
+
+  const svg = d3.select(container).append('svg')
+    .attr('width', svgW).attr('height', svgH)
+    .attr('viewBox', `0 0 ${svgW} ${svgH}`);
+  const g = svg.append('g').attr('transform', `translate(${-x0+pad},${pad})`);
+
+  // 링크
+  g.selectAll('.link')
+    .data(hierarchy.links())
+    .join('path')
+    .attr('class', d => 'link' + (d.target.data._type === 'division' ? ' link-div' : ''))
+    .attr('d', d => {
+      const nh_s = getNodeH(d.source);
+      const sx = d.source.x, sy = d.source.y + nh_s;
+      const tx = d.target.x, ty = d.target.y;
+      const my = (sy + ty) / 2;
+      return `M${sx},${sy} C${sx},${my} ${tx},${my} ${tx},${ty}`;
+    });
+
+  // 노드 그룹
+  const node = g.selectAll('.node')
+    .data(hierarchy.descendants())
+    .join('g')
+    .attr('class', 'node')
+    .attr('transform', d => `translate(${d.x - NW/2},${d.y})`);
+
+  // ── Division 노드 (실) ──
+  const divNode = node.filter(d => d.data._type === 'division');
+  divNode.append('rect')
+    .attr('width', NW).attr('height', NH_DIV).attr('rx', 8)
+    .attr('fill', d => divColor(d.data._name))
+    .style('filter', 'drop-shadow(0 2px 8px rgba(0,0,0,.15))');
+  divNode.append('text')
+    .attr('x', 12).attr('y', NH_DIV/2 + 1)
+    .attr('text-anchor', 'start').attr('dominant-baseline', 'middle')
+    .attr('font-size', '14px').attr('font-weight', '800').attr('fill', 'white')
+    .text(d => d.data._name);
+  divNode.append('text')
+    .attr('x', NW - 10).attr('y', NH_DIV/2 + 1)
+    .attr('text-anchor', 'end').attr('dominant-baseline', 'middle')
+    .attr('font-size', '12px').attr('font-weight', '700').attr('fill', 'rgba(255,255,255,0.85)')
+    .text(d => d.data._count ? `${d.data._count}명` : '');
+
+  // ── 가상 팀 노드 ──
+  const teamNode = node.filter(d => d.data._type === 'team');
+  teamNode.append('rect')
+    .attr('width', NW).attr('height', NH_P).attr('rx', 9)
+    .attr('fill', '#f8f8ff')
+    .attr('stroke', d => teamColor(d.data._team)).attr('stroke-width', 1.5)
+    .style('filter', 'drop-shadow(0 2px 6px rgba(0,0,0,.07))');
+  teamNode.append('rect').attr('width', NW).attr('height', 4).attr('rx', 9)
+    .attr('fill', d => teamColor(d.data._team));
+  teamNode.append('rect').attr('width', NW).attr('height', 2).attr('y', 2)
+    .attr('fill', d => teamColor(d.data._team));
+  teamNode.append('text')
+    .attr('x', NW/2).attr('y', NH_P/2 - 4)
+    .attr('text-anchor', 'middle').attr('dominant-baseline', 'middle')
+    .attr('font-size', '13px').attr('font-weight', '700')
+    .attr('fill', d => teamColor(d.data._team))
+    .text(d => d.data._name);
+  teamNode.append('text')
+    .attr('x', NW/2).attr('y', NH_P/2 + 14)
+    .attr('text-anchor', 'middle').attr('dominant-baseline', 'middle')
+    .attr('font-size', '11px').attr('font-weight', '600')
+    .attr('fill', d => teamColor(d.data._team)).attr('opacity', 0.7)
+    .text(d => d.data._count ? `${d.data._count}명` : '');
+
+  // ── 인물 노드 (CEO / Lead / Member) ──
+  const personNode = node.filter(d => ['ceo','lead','person'].includes(d.data._type));
+
+  personNode.append('rect')
+    .attr('width', NW).attr('height', NH_P).attr('rx', 9)
+    .attr('fill', d => d.data._leave ? '#f0f0f0' : 'white')
+    .attr('stroke', d => d.data._leave ? '#aaaaaa' : nodeColor(d.data))
+    .attr('stroke-width', d => d.data._type === 'ceo' ? 2.5 : 1.5)
+    .style('filter', 'drop-shadow(0 2px 6px rgba(0,0,0,.07))');
+
+  // 상단 컬러 바
+  personNode.append('rect').attr('width', NW).attr('height', 4).attr('rx', 9)
+    .attr('fill', d => d.data._leave ? '#aaaaaa' : nodeColor(d.data));
+  personNode.append('rect').attr('width', NW).attr('height', 2).attr('y', 2)
+    .attr('fill', d => d.data._leave ? '#aaaaaa' : nodeColor(d.data));
+
+  // 팀 라벨 (소속 팀 표시, CEO 제외)
+  personNode.filter(d => d.data._type !== 'ceo' && d.data._team)
+    .append('text')
+    .attr('x', 10).attr('y', 20)
+    .attr('font-size', '10px').attr('font-weight', '600').attr('opacity', .85)
+    .attr('fill', d => d.data._leave ? '#aaaaaa' : nodeColor(d.data))
+    .text(d => d.data._team);
+
+  // 한국어 이름
+  personNode.append('text')
+    .attr('x', NW/2).attr('y', d => d.data._type === 'ceo' ? 36 : 40)
+    .attr('text-anchor', 'middle')
+    .attr('font-size', d => d.data._type === 'ceo' ? '17px' : '15px')
+    .attr('font-weight', '700')
+    .attr('fill', d => d.data._leave ? '#999999' : '#1a1a2e')
+    .text(d => d.data._leave ? d.data._name + ' (휴직)' : d.data._name);
+
+  // 영문 닉네임
+  personNode.filter(d => d.data._en)
+    .append('text')
+    .attr('x', NW/2).attr('y', 57)
+    .attr('text-anchor', 'middle').attr('font-size', '11px').attr('fill', '#9090b0')
+    .text(d => d.data._en);
+
+  // 직무
+  personNode.append('text')
+    .attr('x', NW/2).attr('y', d => d.data._en ? 72 : 62)
+    .attr('text-anchor', 'middle').attr('font-size', '11px').attr('fill', '#555')
+    .text(d => { const j = d.data._job||''; return j.length > 24 ? j.slice(0,22)+'…' : j; });
+
+  // 일반 Lead 뱃지
+  personNode.filter(d => d.data._type === 'lead' && !d.data._isGyeomjik)
+    .append('text')
+    .attr('x', 9).attr('y', NH_P - 8)
+    .attr('font-size', '10px').attr('font-weight', '700')
+    .attr('fill', d => nodeColor(d.data))
+    .text('● Lead');
+
+  // 겸직 Lead 뱃지 (주황 배경 + 흰 텍스트, 눈에 띄게)
+  personNode.filter(d => d.data._type === 'lead' && d.data._isGyeomjik)
+    .each(function() {
+      const g2 = d3.select(this);
+      g2.append('rect')
+        .attr('x', 6).attr('y', NH_P - 24)
+        .attr('width', 68).attr('height', 17).attr('rx', 5)
+        .attr('fill', '#f97316');
+      g2.append('text')
+        .attr('x', 40).attr('y', NH_P - 11)
+        .attr('text-anchor', 'middle')
+        .attr('font-size', '10px').attr('font-weight', '800').attr('fill', 'white')
+        .text('Lead 겸직');
+    });
+
+  // 인원수 배지 (CEO: 총인원, Lead: 팀 인원)
+  personNode.filter(d => d.data._type === 'ceo' || d.data._type === 'lead')
+    .each(function(d) {
+      const g2 = d3.select(this);
+      const label = d.data._type === 'ceo' ? `총 ${d.data._count}명` : `${d.data._count}명`;
+      const color = nodeColor(d.data);
+      g2.append('rect')
+        .attr('x', NW - 48).attr('y', NH_P - 22)
+        .attr('width', 42).attr('height', 16).attr('rx', 4)
+        .attr('fill', color).attr('opacity', 0.12);
+      g2.append('text')
+        .attr('x', NW - 27).attr('y', NH_P - 10)
+        .attr('text-anchor', 'middle')
+        .attr('font-size', '10px').attr('font-weight', '700')
+        .attr('fill', color)
+        .text(label);
+    });
+
+  // ── 겸직 점선 연결 ──
+
+  // 2) 겸직 점선: CEO → 대상 노드
+  let ceoHNode = null;
+  hierarchy.each(d => { if (d.data._type === 'ceo') ceoHNode = d; });
+
+  if (ceoHNode && ceoHNode.data._gyeomjik) {
+    let tgtHNode = null;
+    hierarchy.each(d => {
+      if (d.data._gyeomjikBy) tgtHNode = d;
+    });
+
+    if (tgtHNode) {
+      const sx = ceoHNode.x;
+      const sy = ceoHNode.y + NH_P;
+      const tx = tgtHNode.x;
+      const ty = tgtHNode.y;
+      const my = sy + (ty - sy) * 0.45;
+
+      // 링크보다 앞에 두기 위해 링크 뒤 노드 앞에 삽입
+      g.insert('path', '.node')
+        .attr('fill', 'none')
+        .attr('stroke', '#f97316')
+        .attr('stroke-width', 2)
+        .attr('stroke-dasharray', '7,4')
+        .attr('opacity', 0.7)
+        .attr('d', `M${sx},${sy} C${sx},${my} ${tx},${my} ${tx},${ty}`);
+
+      // 중간 "겸직" 라벨
+      g.append('text')
+        .attr('x', (sx + tx) / 2 + 6)
+        .attr('y', (sy + ty) / 2 - 4)
+        .attr('text-anchor', 'middle')
+        .attr('font-size', '10px').attr('font-weight', '800')
+        .attr('fill', '#f97316').attr('opacity', 0.9)
+        .text('겸직');
+    }
+  }
+
+  // ── 멤버 카드 세로 스택 렌더링 ──
+  hierarchy.descendants().forEach(d => {
+    const members = d.data._members;
+    if (!members || members.length === 0) return;
+    const tc = teamColor(d.data._team);
+
+    // 리드→멤버 연결선
+    g.insert('line', '.node')
+      .attr('x1', d.x).attr('y1', d.y + NH_P)
+      .attr('x2', d.x).attr('y2', d.y + NH_P + MGAP)
+      .attr('stroke', '#cdd0e0').attr('stroke-width', 1.5);
+
+    members.forEach((m, i) => {
+      const mx = d.x - NW/2;
+      const my = d.y + NH_P + MGAP + i * (NH_M + MGAP);
+      const mg = g.append('g').attr('class', 'node').attr('transform', `translate(${mx},${my})`);
+
+      // 카드 배경
+      const mc = m._leave ? '#aaaaaa' : tc;
+      mg.append('rect')
+        .attr('width', NW).attr('height', NH_M).attr('rx', 8)
+        .attr('fill', m._leave ? '#f0f0f0' : 'white')
+        .attr('stroke', mc).attr('stroke-width', 1)
+        .style('filter', 'drop-shadow(0 1px 4px rgba(0,0,0,.06))');
+      // 상단 컬러바
+      mg.append('rect').attr('width', NW).attr('height', 3).attr('rx', 8).attr('fill', mc);
+      mg.append('rect').attr('width', NW).attr('height', 1.5).attr('y', 1.5).attr('fill', mc);
+      // 이름
+      mg.append('text')
+        .attr('x', NW/2).attr('y', m._en ? 24 : 30)
+        .attr('text-anchor', 'middle').attr('font-size', '13px').attr('font-weight', '700')
+        .attr('fill', m._leave ? '#999999' : '#1a1a2e')
+        .text(m._leave ? m._name + ' (휴직)' : m._name);
+      // 영문 닉네임
+      if (m._en) mg.append('text')
+        .attr('x', NW/2).attr('y', 38)
+        .attr('text-anchor', 'middle').attr('font-size', '10px').attr('fill', m._leave ? '#bbbbbb' : '#9090b0')
+        .text(m._en);
+      // 직무
+      if (m._job) mg.append('text')
+        .attr('x', NW/2).attr('y', m._en ? 52 : 46)
+        .attr('text-anchor', 'middle').attr('font-size', '10px').attr('fill', m._leave ? '#bbbbbb' : '#777')
+        .text(m._job.length > 22 ? m._job.slice(0,20)+'…' : m._job);
+
+      // 멤버 간 연결선
+      if (i < members.length - 1) {
+        g.insert('line', '.node')
+          .attr('x1', d.x).attr('y1', my + NH_M)
+          .attr('x2', d.x).attr('y2', my + NH_M + MGAP)
+          .attr('stroke', '#cdd0e0').attr('stroke-width', 1.5);
+      }
+
+      // 툴팁
+      mg.on('mousemove', (event) => {
+        const tooltip = document.getElementById('tooltip');
+        const lines = [m._name + (m._en ? ` (${m._en})` : ''), [m._div, m._team].filter(Boolean).join(' > '), m._job, m._employ].filter(Boolean);
+        tooltip.innerHTML = lines.join('<br>');
+        tooltip.style.left = (event.clientX+12)+'px';
+        tooltip.style.top  = (event.clientY-10)+'px';
+        tooltip.classList.add('show');
+      }).on('mouseleave', () => document.getElementById('tooltip').classList.remove('show'));
+    });
+  });
+
+  // 툴팁
+  const tooltip = document.getElementById('tooltip');
+  node.on('mousemove', (event, d) => {
+    if (d.data._type === 'division') return;
+    const lines = [
+      d.data._name + (d.data._en ? ` (${d.data._en})` : ''),
+      [d.data._div, d.data._team].filter(Boolean).join(' > '),
+      d.data._job,
+      d.data._employ || '',
+      d.data._gyeomjik ? `겸직: ${d.data._gyeomjik}` : '',
+    ].filter(Boolean);
+    tooltip.innerHTML = lines.join('<br>');
+    tooltip.style.left = (event.clientX+12)+'px';
+    tooltip.style.top  = (event.clientY-10)+'px';
+    tooltip.classList.add('show');
+  }).on('mouseleave', () => tooltip.classList.remove('show'));
+
+  // 범례
+  updateLegend(hierarchy);
+}
+
+function updateLegend(hierarchy) {
+  const divs = [], teams = [];
+  hierarchy.each(d => {
+    if (d.data._type === 'division') divs.push(d.data._name);
+    if (d.data._team && !teams.includes(d.data._team)) teams.push(d.data._team);
+  });
+
+  const legend = document.getElementById('legend');
+  legend.innerHTML = '';
+
+  divs.forEach(div => {
+    const el = document.createElement('div');
+    el.className = 'legend-item';
+    el.innerHTML = `<div class="legend-dot" style="background:${divColor(div)}"></div><strong>${div}</strong>`;
+    legend.appendChild(el);
+  });
+
+  if (divs.length && teams.length) {
+    const sep = document.createElement('div'); sep.className = 'legend-sep';
+    legend.appendChild(sep);
+  }
+
+  teams.forEach(team => {
+    const el = document.createElement('div');
+    el.className = 'legend-item';
+    el.innerHTML = `<div class="legend-dot" style="background:${teamColor(team)}"></div>${team}`;
+    legend.appendChild(el);
+  });
+}
+
+// ── 뷰 전환 ──
+let currentView = 'org';
+function switchView(view) {
+  currentView = view;
+  document.getElementById('chart-area').style.display = view === 'org'   ? 'block' : 'none';
+  document.getElementById('table-area').style.display = view === 'table' ? 'block' : 'none';
+  document.getElementById('tab-org').classList.toggle('active',   view === 'org');
+  document.getElementById('tab-table').classList.toggle('active', view === 'table');
+}
+
+function downloadPDF() {
+  const viewName = currentView === 'org' ? '조직도' : '팀요약';
+  document.title = viewName + '_' + new Date().toLocaleDateString('ko-KR').replace(/\. /g,'-').replace('.','');
+  document.body.classList.remove('print-org', 'print-table');
+  document.body.classList.add(currentView === 'org' ? 'print-org' : 'print-table');
+  window.print();
+  setTimeout(() => {
+    document.title = '조직도';
+    document.body.classList.remove('print-org', 'print-table');
+  }, 1000);
+}
+
+// ── 팀 요약 테이블 렌더링 ──
+function renderTable(employees) {
+  const ceo = employees.find(e =>
+    String(e['레벨']||'').trim() === 'E1' || String(e['직무']||'').toUpperCase() === 'CEO'
+  );
+  const gyeomjikTeam = ceo ? String(ceo['겸직팀']||'').trim() : '';
+
+  // 실 → 팀 그룹화
+  const divMap = {};
+  employees.forEach(emp => {
+    const div  = String(emp['실']||'').trim();
+    const team = String(emp['팀']||'').trim();
+    if (!div || !team) return;
+    if (!divMap[div]) divMap[div] = {};
+    if (!divMap[div][team]) divMap[div][team] = { leads: [], members: [] };
+    if (String(emp['직책']||'').trim() === 'Lead') divMap[div][team].leads.push(emp);
+    else divMap[div][team].members.push(emp);
+  });
+
+  const sortedDivs = Object.keys(divMap).sort((a, b) => {
+    const ia = DIV_ORDER.indexOf(a), ib = DIV_ORDER.indexOf(b);
+    return (ia === -1 ? 999 : ia) - (ib === -1 ? 999 : ib);
+  });
+
+  function isLeave(e) { return String(e['휴직 유무']||'').trim() === 'O'; }
+  function empLabel(e) {
+    const en = String(e['영어 닉네임']||e['영어닉네임']||'').trim();
+    const ko = String(e['성명']||'').trim();
+    const label = en ? `${en}(${ko})` : ko;
+    return isLeave(e) ? `${label} (휴직)` : label;
+  }
+  function empChip(e) {
+    const label = empLabel(e);
+    if (isLeave(e)) return `<span class="member-chip" style="background:#e8e8e8;color:#999">${label}</span>`;
+    return `<span class="member-chip">${label}</span>`;
+  }
+
+  // 실별 인원수 계산
+  function divTotal(div) {
+    return Object.values(divMap[div]).reduce((s, {leads, members}) => s + leads.length + members.length, 0);
+  }
+  const grandTotal = sortedDivs.reduce((s, div) => s + divTotal(div), 0);
+
+  let rows = `<tr class="grand-total-row">
+    <td colspan="3">👥 전체 인원</td>
+    <td class="total-count">${grandTotal}명</td>
+  </tr>`;
+
+  sortedDivs.forEach(div => {
+    const teams = divMap[div];
+    const teamKeys = Object.keys(teams);
+    const dTotal = divTotal(div);
+
+    rows += `<tr class="div-group-header">
+      <td colspan="4">
+        <span class="div-badge" style="background:${divColor(div)}">${div}</span>
+        <span class="div-count">${dTotal}명</span>
+      </td>
+    </tr>`;
+
+    teamKeys.forEach(team => {
+      const { leads, members } = teams[team];
+      const isGyeomjikTeam = (team === gyeomjikTeam);
+
+      // 팀장 표시
+      let leadHtml = '';
+      if (leads.length > 0) {
+        leadHtml = leads.map(l =>
+          `<span class="lead-name">${empLabel(l)}</span>`
+        ).join(', ');
+      } else if (isGyeomjikTeam && ceo) {
+        leadHtml = `<span class="lead-name">${empLabel(ceo)}</span><span class="gyeomjik-tag">겸직</span>`;
+      } else {
+        leadHtml = '<span style="color:#bbb">-</span>';
+      }
+
+      // 구성원 표시 (휴직자 먼저)
+      const sortedMembers = [...members].sort((a, b) => (isLeave(b)?1:0) - (isLeave(a)?1:0));
+      const memberHtml = sortedMembers.length
+        ? sortedMembers.map(m => empChip(m)).join(' ')
+        : '<span style="color:#bbb">-</span>';
+
+      // 총 인원 (겸직 팀장은 미포함)
+      const total = isGyeomjikTeam ? members.length : leads.length + members.length;
+
+      // 팀 색상
+      const tColor = teamColor(team);
+
+      rows += `<tr>
+        <td><span class="team-badge" style="color:${tColor};background:${tColor}18">${team}</span></td>
+        <td>${leadHtml}</td>
+        <td class="members-list">${memberHtml}</td>
+        <td class="total-count" style="color:${tColor}">${total}</td>
+      </tr>`;
+    });
+  });
+
+  document.getElementById('table-container').innerHTML = `
+    <table class="team-summary-table">
+      <thead>
+        <tr>
+          <th style="width:130px">팀</th>
+          <th style="width:180px">팀장</th>
+          <th>구성원</th>
+          <th style="text-align:center;width:80px">팀 인원</th>
+        </tr>
+      </thead>
+      <tbody>${rows}</tbody>
+    </table>`;
+}
+
+// ── 처리 ──
+function processData(sheetData) {
+  clearError();
+  const employees = parseActiveEmployees(sheetData);
+  if (employees.length === 0) {
+    showError('직원 데이터를 찾지 못했습니다. "성명"과 "실" 컬럼이 있는지 확인해주세요.');
+    return;
+  }
+  const root = buildHierarchy(employees);
+  if (!root) {
+    showError('CEO를 찾지 못했습니다. "레벨" 컬럼에 "E1" 또는 "직무" 컬럼에 "CEO"가 있는지 확인해주세요.');
+    return;
+  }
+  document.getElementById('emp-count').textContent = `재직자 ${employees.length}명`;
+  document.getElementById('last-updated').textContent = `갱신: ${new Date().toLocaleTimeString('ko-KR')}`;
+  document.getElementById('upload-area').style.display = 'none';
+  document.getElementById('view-tabs').classList.add('visible');
+  document.getElementById('pdf-btn').style.display = 'inline-block';
+  renderChart(root);
+  renderTable(employees);
+  switchView(currentView); // 현재 탭 유지
+}
+
+function showError(msg) {
+  clearError();
+  const el = document.createElement('div');
+  el.className='err-msg'; el.id='err-msg'; el.textContent=msg;
+  document.getElementById('upload-area').appendChild(el);
+}
+function clearError() { document.getElementById('err-msg')?.remove(); }
+
+// ── 파일 로드 ──
+async function loadExcel(file) {
+  if (file.name.toLowerCase().endsWith('.csv')) {
+    const text = await file.text();
+    await parseCSVText(text);
+  } else {
+    const buf = await file.arrayBuffer();
+    const wb = XLSX.read(buf);
+    const ws = wb.Sheets[wb.SheetNames[0]];
+    processData(XLSX.utils.sheet_to_json(ws, { header:1, defval:null, raw:false }));
+  }
+}
+async function parseCSVText(text) {
+  const wb = XLSX.read(text, { type:'string' });
+  const ws = wb.Sheets[wb.SheetNames[0]];
+  processData(XLSX.utils.sheet_to_json(ws, { header:1, defval:null, raw:false }));
+}
+
+let refreshTimer = null, lastCsvUrl = '';
+
+async function loadFromURL() {
+  let url = document.getElementById('sheets-url').value.trim();
+  if (!url) return alert('URL을 입력해주세요.');
+  // 이미 /pub?output=csv 형식이면 변환하지 않음
+  const alreadyPub = url.includes('/pub?') || url.includes('output=csv');
+  if (!alreadyPub) {
+    const m = url.match(/\/spreadsheets\/d\/([^/]+)/);
+    if (m) {
+      const gid = (url.match(/[?&]gid=(\d+)/)||[])[1]||'0';
+      url = `https://docs.google.com/spreadsheets/d/${m[1]}/export?format=csv&gid=${gid}`;
+    }
+  }
+  lastCsvUrl = url;
+  await fetchAndRender(url);
+  clearInterval(refreshTimer);
+  if (document.getElementById('auto-refresh').checked)
+    refreshTimer = setInterval(() => fetchAndRender(lastCsvUrl), 5*60*1000);
+}
+
+async function fetchAndRender(url) {
+  const cacheBust = (url.includes('?')?'&':'?') + '_t=' + Date.now();
+  const proxies = [
+    u => u + cacheBust,
+    u => 'https://corsproxy.io/?' + encodeURIComponent(u),
+    u => 'https://api.allorigins.win/raw?url=' + encodeURIComponent(u),
+  ];
+  let lastErr;
+  for (const proxy of proxies) {
+    try {
+      const res = await fetch(proxy(url));
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const text = await res.text();
+      if (text && text.trim().length > 0) { await parseCSVText(text); return; }
+    } catch(e) { lastErr = e; }
+  }
+  showError(`URL 로드 실패: ${lastErr?.message}\nGoogle Sheets를 "웹에 게시 → CSV"로 공개해주세요.`);
+}
+
+document.getElementById('auto-refresh').addEventListener('change', function() {
+  clearInterval(refreshTimer);
+  if (this.checked && lastCsvUrl) refreshTimer = setInterval(() => fetchAndRender(lastCsvUrl), 5*60*1000);
+});
+
+function handleFileInput(e) {
+  const f = e.target.files[0]; if (f) { lastCsvUrl=''; loadExcel(f); }
+}
+
+// ── 자동 로드 ──
+const AUTO_CSV_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vRT-pmiEbstzYMuSEqQ3q5DOZzggPrfYM9KNF9831jSc_R8W3AEbIMr3ItfudIPVasxf6qbUJT9491f/pub?gid=0&single=true&output=csv';
+document.getElementById('sheets-url').value = AUTO_CSV_URL;
+lastCsvUrl = AUTO_CSV_URL;
+fetchAndRender(AUTO_CSV_URL);
+refreshTimer = setInterval(() => fetchAndRender(AUTO_CSV_URL), 5 * 60 * 1000);
+
+// ── 드래그 앤 드롭 ──
+const dz = document.getElementById('drop-zone');
+document.addEventListener('dragenter', e => { e.preventDefault(); dz.classList.add('drag-over'); });
+document.addEventListener('dragover',  e => { e.preventDefault(); dz.classList.add('drag-over'); });
+document.addEventListener('dragleave', ()=> dz.classList.remove('drag-over'));
+document.addEventListener('drop', e => {
+  e.preventDefault(); dz.classList.remove('drag-over');
+  const f = e.dataTransfer.files[0]; if (f) { lastCsvUrl=''; loadExcel(f); }
+});
+</script>
+</body>
+</html>
